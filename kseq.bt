@@ -1,0 +1,501 @@
+//------------------------------------------------
+// File: KSEQ.bt
+// Description: Template for KSEQ MIDI sequence files
+// Version: 0.1
+//------------------------------------------------
+
+// Define colors for different sections
+#define COLOR_HEADER              0xC0FFC0
+#define COLOR_BASIC_SETTINGS      0xFFFFC0
+#define COLOR_SEQUENCER_SONG_DATA 0xC0C0FF
+#define COLOR_TRACK_DATA          0xFFC0C0
+
+// Define MIDI event types
+enum <byte> EVENT_TYPE {
+    MARKER_NEW_TRACK = 0xF0,
+    MARKER_END_SEQUENCE = 0xF1,
+    MARKER_END_TRACK = 0xF2,
+    MARKER_TEMPO_CHANGE = 0xF3,
+    MARKER_PATTERN = 0x0F,
+    MARKER_MEASURE_MARK = 0xF5,
+    MARKER_NO_OPERATION = 0xF8,
+    MARKER_POLY_AFTERTOUCH = 0xFA,
+    MARKER_CONTROL_CHANGE = 0xFB,
+    MARKER_PROGRAM_CHANGE = 0xFC,
+    MARKER_CHANNEL_AFTERTOUCH = 0xFD,
+    MARKER_PITCH_BEND = 0xFE
+};
+
+// Define quantize values
+enum <byte> QUANTIZE {
+    QUANTIZE_OFF = 0,
+    QUANTIZE_1_32 = 1,
+    QUANTIZE_1_24 = 2,
+    QUANTIZE_1_16 = 3,
+    QUANTIZE_1_12 = 4,
+    QUANTIZE_1_8 = 5,
+    QUANTIZE_1_4 = 6,
+    QUANTIZE_1_2 = 7
+};
+
+// Define click values
+enum <byte> CLICK {
+    CLICK_OFF = 0,
+    CLICK_REC = 1,
+    CLICK_REC_AND_PLAY = 2,
+    CLICK_ALWAYS = 3
+};
+
+// Define beat click values
+enum <byte> BEATCLICK {
+    BEATCLICK_1_4 = 0,
+    BEATCLICK_1_6 = 1,
+    BEATCLICK_1_8 = 2,
+    BEATCLICK_1_12 = 3,
+    BEATCLICK_1_24 = 4,
+    BEATCLICK_1_32 = 5
+};
+
+// Define sync values
+enum <byte> SYNC {
+    SYNC_INTERNAL = 0,
+    SYNC_MIDI = 1
+};
+
+// Define output channel values
+enum <byte> OUTPUT_CHANNEL {
+    CH01 = 0,
+    CH02 = 1,
+    CH03 = 2,
+    CH04 = 3,
+    CH05 = 4,
+    CH06 = 5,
+    CH07 = 6,
+    CH08 = 7,
+    CH09 = 8,
+    CH10 = 9,
+    CH11 = 10,
+    CH12 = 11,
+    CH13 = 12,
+    CH14 = 13,
+    CH15 = 14,
+    CH16 = 15,
+    OMNI = 16,
+    KEYBOARD = 17
+};
+
+// File header structure
+typedef struct {
+    char identifier[10] <comment="Should be 'SY1_SEQALL'">;
+    byte reserved1[0x20 - 10];
+} HEADER <bgcolor=COLOR_HEADER>;
+
+enum <byte> TIME_SIGNATURE {
+    // Denominator of 4 (simple meters)
+    TIME_SIG_1_4 = 0x04,
+    TIME_SIG_2_4 = 0x0c,
+    TIME_SIG_3_4 = 0x14,
+    TIME_SIG_4_4 = 0x1c,
+    TIME_SIG_5_4 = 0x24,
+    TIME_SIG_6_4 = 0x2c,
+    TIME_SIG_7_4 = 0x34,
+    TIME_SIG_8_4 = 0x3c,
+    TIME_SIG_9_4 = 0x44,
+    TIME_SIG_10_4 = 0x4c,
+    TIME_SIG_11_4 = 0x54,
+    TIME_SIG_12_4 = 0x5c,
+    
+    // Denominator of 8 (simple meters)
+    TIME_SIG_1_8 = 0x02,
+    TIME_SIG_2_8 = 0x0a,
+    TIME_SIG_3_8 = 0x12,
+    TIME_SIG_4_8 = 0x1a,
+    TIME_SIG_5_8 = 0x22,
+    TIME_SIG_6_8 = 0x2a,
+    TIME_SIG_7_8 = 0x32,
+    TIME_SIG_8_8 = 0x3a,
+    TIME_SIG_9_8 = 0x42,
+    TIME_SIG_10_8 = 0x4a,
+    TIME_SIG_11_8 = 0x52,
+    TIME_SIG_12_8 = 0x5a,
+    
+    // Denominator of 2 (simple meters)
+    TIME_SIG_1_2 = 0x06,
+    TIME_SIG_2_2 = 0x0e,
+    TIME_SIG_3_2 = 0x16,
+    TIME_SIG_4_2 = 0x1e,
+    
+    // Denominator of 16 (simple meters)
+    TIME_SIG_1_16 = 0x01,
+    TIME_SIG_2_16 = 0x09,
+    TIME_SIG_3_16 = 0x11,
+    TIME_SIG_4_16 = 0x19,
+    TIME_SIG_5_16 = 0x21,
+    TIME_SIG_6_16 = 0x29,
+    
+    // Less common time signatures
+    TIME_SIG_7_16 = 0x31,
+    TIME_SIG_9_16 = 0x41,
+    TIME_SIG_12_16 = 0x59,
+    TIME_SIG_15_16 = 0x71,
+    TIME_SIG_21_16 = 0xa1
+};
+
+typedef struct {
+    QUANTIZE quantize;
+    CLICK click;
+    BEATCLICK beatclick;
+    byte reserved2[1] <format=hex, comment="Always 0x08">;
+    SYNC sync;
+    OUTPUT_CHANNEL output_channel;
+    byte velocity_switch;
+    byte control_change_switch;
+    byte pitch_bend_switch;
+    byte program_change_switch;
+    byte aftertouch_switch;
+    byte sysex_switch;
+    byte midi_control_switch;
+    byte edit_beat_clock;
+    byte accent_1;
+    byte accent_2;
+    byte accent_3;
+    byte accent_4;
+    byte gate_type;
+} BASIC_SETTINGS <bgcolor=COLOR_BASIC_SETTINGS>;
+
+typedef struct {
+    byte reserved3[973] <comment="Should be all zeros">;
+} FREE_SPACE_AFTER_HEADER;
+
+typedef struct {
+    byte tempo;
+    byte reserved5[0x0421 - 0x41c - 1] <comment="unknown">;
+    byte pages_used_flag;
+    char song_name[8];
+} SONG_PROPERTIES;
+
+typedef struct {
+    byte track_usage_1_to_8 <format=binary, comment="Track usage (1 to 8), bit corresponding, eg. tracks 1,2 and 4 used gives %00001011 ($07)">;
+    byte track_usage_9_to_16 <format=binary, comment="Track usage (9 to 16), bit 7 ($80) correspond to pattern used">;
+    byte midi_channels[16] <comment="MIDI Channels (1-16)">;
+    TIME_SIGNATURE time_signature_in_measure[999];
+} TRACK_CONFIGURATION;
+
+enum <byte> PATTERN_STATUS {
+    FREE = 0,
+    WRITTEN = 1
+};
+
+typedef struct {
+    // This is the length relative to track 16 first delimiter (F0 0F)
+    // MSB 00 LSB (the middle byte is perhaps the MSB for very long pattern, not verified)
+    ubyte msb;
+    ubyte middle <comment="(Usually 0)">;
+    ubyte lsb;
+} PATTERNS_OFFSET;
+
+string ReadPatternsOffsetLength(struct PATTERNS_OFFSET &len) {
+    local int length = (len.msb * 512) + (len.middle * 256) + len.lsb;
+    local string result;
+    SPrintf(result, "Length of pattern area within track_data: 0x%X / %d bytes", length, length);
+    return result;
+}
+
+typedef struct {
+    PATTERN_STATUS pattern_status;
+    TIME_SIGNATURE time_signature;
+    byte length <comment="number of measures">;
+    // Pointer to start, points to pattern starter ($F0 $0F), 3 bytes like MSB followed by $00 and LSB, relative to the pattern start indicator F0 0F
+    PATTERNS_OFFSET start <comment=ReadPatternsOffsetLength>;
+    // Pointer to end, points to pattern terminator ($F2), 3 bytes like above
+    PATTERNS_OFFSET end <comment=ReadPatternsOffsetLength>;
+} PATTERN_ALLOCATION_TABLE;
+
+// Helper for readable pattern chain entries
+struct PATTERN_CHAIN_ENTRY {
+    byte value <comment=EntryTypeComment(this)>;
+};
+
+string EntryTypeComment(byte v) {
+    local string s;
+    int u = v & 0xFF;
+    if(u == 0xFF) return "End Marker";
+    if(u == 0x80) return "Repeat Begin";
+    if(u >= 0x81 && u <= 0xE3) {
+        SPrintf(s, "Repeat End (%d)", u - 0x80);
+        return s;
+    }
+    if(u >= 0x01 && u <= 0x99) return "Pattern Reference";
+    SPrintf(s, "Unknown (0x%02X)", u);
+    return s;
+}
+
+typedef struct {
+    char song_header[16] <comment="Should be 'COM-KSEQSY1_SEQ'">;
+    byte song_global_data[12] <comment="unknown">;
+    SONG_PROPERTIES song_properties;
+    TRACK_CONFIGURATION track_configuration;
+    // offset from from F0 0F marker
+    PATTERNS_OFFSET patterns_area_length_in_bytes <comment=ReadPatternsOffsetLength>;
+    PATTERN_ALLOCATION_TABLE patterns_table[99];
+    struct PATTERN_CHAIN_AREA {
+        local int max = 0x1000 - 0xba1;
+        local int i;
+        for(i = 0; i < max; i++) {
+            PATTERN_CHAIN_ENTRY entry;
+            if(entry.value == 0xFF) {
+                i++;
+                break;
+            }
+        }
+        if(i < max) FSkip(max - i);
+    };
+    PATTERN_CHAIN_AREA pattern_chain_area;
+} SEQUENCER_SONG_DATA <bgcolor=COLOR_SEQUENCER_SONG_DATA>;
+
+// --------------------------------------------------------------------
+// track events data structures
+// --------------------------------------------------------------------
+
+string MidiToNoteName(byte midiNote) {
+    local string note;
+    local int noteIndex = midiNote % 12;
+    local int octave = (midiNote / 12) - 1;
+    
+    switch(noteIndex) {
+        case 0: note = "C"; break;
+        case 1: note = "C#"; break;
+        case 2: note = "D"; break;
+        case 3: note = "D#"; break;
+        case 4: note = "E"; break;
+        case 5: note = "F"; break;
+        case 6: note = "F#"; break;
+        case 7: note = "G"; break;
+        case 8: note = "G#"; break;
+        case 9: note = "A"; break;
+        case 10: note = "A#"; break;
+        case 11: note = "B"; break;
+    }
+    
+    local string result;
+    SPrintf(result, "Note: %s%d", note, octave);
+    return result;
+}
+
+string TempoChangePercentage(uint16 msb, uint16 lsb) {
+    double tempo_percentage = ((msb << 7) | lsb)/10;
+    
+    local string result;
+    SPrintf(result, "Tempo percentage: %d", tempo_percentage);
+    return result;
+}
+
+string GetShortNoteDuration(byte value) {
+    // Extract 4 bits of duration (1100dddd)
+    local uint duration = value & 0x0F;
+    // Convert to ticks (multiply by 4 to match PPQN)
+    local int ticks = duration * 4;
+    local string result;
+    result = SPrintf(result, "Ticks: %d (24 ticks per quarter note)", ticks);
+    return result;
+}
+
+string GetShortDelta(byte value) {
+    // Extract 5 bits of delta time (100xxxxx)
+    local uint ticks = value & 0x1F;
+    local string result;
+    result = SPrintf(result, "Ticks: %d (96 ticks per quarter note)", ticks);
+    return result;
+}
+
+typedef struct {
+    byte duration : 4 <comment=GetShortNoteDuration>;
+    byte type : 4 <comment="(Always 0xC)">;
+    byte note : 7 <comment=MidiToNoteName>;
+    byte reserved1 : 1 <comment="(Always 0)">;
+    byte velocity : 7;
+    byte reserved2 : 1 <comment="(Always 0)">;
+} NOTE_SHORT;
+
+typedef struct {
+    byte durationHigh : 4;
+    byte type : 4 <comment="(Always 0xD)">;
+    byte durationLow : 7;
+    byte reserved1 : 1 <comment="(Always 0)">;
+    byte note : 7;
+    byte reserved2 : 1 <comment="(Always 0)">;
+    byte velocity : 7;
+    byte reserved3 : 1 <comment="(Always 0)">;
+} NOTE_LONG;
+
+typedef struct {
+    byte value : 5 <comment=GetShortDelta>;
+    byte type : 3 <comment="(Always 0x4)">;
+} DELTA_SHORT;
+
+typedef struct {
+    byte valueHigh : 5;
+    byte type : 3 <comment="(Always 0x5)">;
+    byte valueLow : 7;
+    byte reserved : 1;
+} DELTA_LONG;
+
+
+typedef struct {
+    byte type <comment="(Always 0xF3)">;
+    byte msb;
+    byte lsb;
+} TEMPO_CHANGE_EVENT <comment=TempoChangePercentage(msb, lsb)>;
+
+// MIDI control event structures
+typedef struct {
+    byte type <comment="(Always 0xFA)">;
+    byte note : 7;
+    byte reserved1 : 1;
+    byte pressure : 7;
+    byte reserved2 : 1;
+} POLY_AFTERTOUCH_EVENT;
+
+typedef struct {
+    byte type <comment="(Always 0xFB)">;
+    byte controller : 7;
+    byte reserved1 : 1;
+    byte value : 7;
+    byte reserved2 : 1;
+} CONTROL_CHANGE_EVENT;
+
+typedef struct {
+    byte type <comment="(Always 0xFC)">;
+    byte program : 7;
+    byte reserved : 1;
+} PROGRAM_CHANGE_EVENT;
+
+typedef struct {
+    byte type <comment="(Always 0xFD)">;
+    byte pressure : 7;
+    byte reserved : 1;
+} CHANNEL_AFTERTOUCH_EVENT;
+
+typedef struct {
+    byte type <comment="(Always 0xFE)">;
+    byte lsb : 7;
+    byte reserved1 : 1;
+    byte msb : 7;
+    byte reserved2 : 1;
+} PITCH_BEND_EVENT;
+
+typedef struct {
+    byte new_track <format=hex>;
+    byte trackNum;
+} NEW_TRACK;
+
+typedef struct {
+    byte new_track <format=hex>;
+    byte pattern_marker <format=hex>;
+} NEW_PATTERN;
+
+// Track event parsing
+void ParseTrackEvents() {
+    local int done = 0;
+    local byte eventType;
+    local byte nextByte;
+    // Use comkseq_offset as base for all absolute seeks!
+    local uint64 startPos = comkseq_offset + 0x1000 - 0x400; // 0x1000 is relative to KSEQ, shift for AllData
+    FSeek(startPos);
+    while (!done && !FEof()) {
+        eventType = ReadByte();     
+        
+        // we first try to match against note and delta events. 
+        // To do that, we need to mask a few bits away to test for the events.
+        if ((eventType & 0xF0) == 0xC0) { // short note events start with 0b1100
+            NOTE_SHORT note_short <comment="Short note">;
+        } 
+        else if ((eventType & 0xF0) == 0xD0) { // long note events start with 0b1101
+            NOTE_LONG note_long <comment="Long note">;
+        }
+        else if ((eventType & 0xE0) == 0x80) { // delta short events start with 0b100
+            DELTA_SHORT delta_short <comment="Short delta time">;
+        }
+        else if ((eventType & 0xE0) == 0xA0) { // delta long events start with 0b101
+            DELTA_LONG delta_long <comment="Long delta time">;
+        }
+        else if (eventType == MARKER_NEW_TRACK) { // starting from here, the eventTypes take up a whole byte, so we don't need to mask any more
+            nextByte = ReadByte(FTell() + 1);
+            if (nextByte == MARKER_PATTERN) { // it's a pattern
+                NEW_PATTERN new_pattern;
+                Printf("New Pattern: %d\n", new_pattern.pattern_marker);
+            } else { // it's a track
+                NEW_TRACK new_track;
+                Printf("New Track: %d\n", new_track.trackNum);
+            }
+        }
+        else if (eventType == MARKER_TEMPO_CHANGE) {
+            TEMPO_CHANGE_EVENT tempo_change;
+        } 
+        else if (eventType == MARKER_END_SEQUENCE) {
+            byte end_sequence <format=hex>;
+            done = 1;
+            Printf("End of Sequence\n");
+        }
+        else if (eventType == MARKER_END_TRACK) {
+            byte end_track <format=hex>;
+            Printf("End of Track\n");            
+        }
+        else if (eventType == MARKER_POLY_AFTERTOUCH) {
+            POLY_AFTERTOUCH_EVENT aftertouch_event;            
+        }
+        else if (eventType == MARKER_CONTROL_CHANGE) {
+            CONTROL_CHANGE_EVENT control_change_event;
+        }
+        else if (eventType == MARKER_PROGRAM_CHANGE) {
+            PROGRAM_CHANGE_EVENT program_change_event;
+        }
+        else if (eventType == MARKER_CHANNEL_AFTERTOUCH) {
+            CHANNEL_AFTERTOUCH_EVENT channel_aftertouch_event;
+        }
+        else if (eventType == MARKER_PITCH_BEND) {
+            PITCH_BEND_EVENT pitch_bend_event;
+        }
+        else {
+            byte unknown <format=hex>;
+            Printf("Unknown event type: 0x%02X\n", unknown);
+        }      
+    }
+}
+
+typedef struct {
+  ParseTrackEvents();
+} TRACK_DATA <bgcolor=COLOR_TRACK_DATA>;
+
+// --- COM-KSEQ marker scan and offset logic ---
+local int comkseq_offset = -1;
+if (ReadString(0x400, 8) == "COM-KSEQ")
+    comkseq_offset = 0x400;
+else if (ReadString(0x800, 8) == "COM-KSEQ")
+    comkseq_offset = 0x800;
+else {
+    local int i;
+    for (i = 0; i < FileSize() - 8; i = i + 1) {
+        if (ReadString(i, 8) == "COM-KSEQ") {
+            comkseq_offset = i;
+            break;
+        }
+    }
+}
+if (comkseq_offset == -1)
+    Warning("COM-KSEQ marker not found!");
+local string fileType = (comkseq_offset == 0x400) ? "KSEQ" : (comkseq_offset == 0x800) ? "AllData" : "Unknown/Custom";
+
+// --- Main file structure ---
+LittleEndian();
+
+// Always map the first 16 bytes as a generic header
+char file_header[16] <comment="KSEQ: 'SY1_SEQALL...', AllData: 'SY1 ALL...', etc.">;
+
+BASIC_SETTINGS basic_settings;
+FREE_SPACE_AFTER_HEADER free_space;
+
+// Jump to the detected COM-KSEQ offset for main sequencer data
+FSeek(comkseq_offset);
+SEQUENCER_SONG_DATA sequencer_song_data;
+TRACK_DATA track_data;
