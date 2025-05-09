@@ -67,18 +67,38 @@ public final class KseqToMidi {
             }
         }
 
-        Sequence seq = new Sequence(Sequence.PPQ, MIDI_PPQN);
+        Sequence seq = new Sequence(Sequence.PPQ, KseqConstants.MIDI_PPQN);
 
-        // Set initial time signature at bar 0 as a MIDI meta event at tick 0
+        // Set all time signature changes as MIDI meta events at the correct ticks
+
         int tsTableOffset = getOffset(KseqConstants.TIME_SIG_TABLE_OFFSET);
-        int tsByte = 0x1c; // default 4/4 if not found
-        if (data.length > tsTableOffset) {
-            tsByte = data[tsTableOffset] & 0xFF;
+        int tsTableLen = KseqConstants.TIME_SIG_TABLE_LENGTH;
+        byte[] timeSigTable = null;
+        if (data.length >= tsTableOffset + tsTableLen) {
+            timeSigTable = Arrays.copyOfRange(data, tsTableOffset, tsTableOffset + tsTableLen);
         }
-        javax.sound.midi.MetaMessage timeSigMsg = createTimeSignatureMeta(tsByte);
-        seq.createTrack().add(new javax.sound.midi.MidiEvent(timeSigMsg, 0));
-        sink.log(String.format("[DEBUG] Wrote MIDI time signature meta event at tick 0: %s (0x%02X) raw=%s",
-            decodeTimeSignature(tsByte), tsByte, Arrays.toString(timeSigMsg.getData())));
+        Track tsTrack = seq.createTrack();
+        int lastSig = -1;
+        int tick = 0;
+        int numerator = 4, denominator = 4; // Defaults
+        for (int bar = 0; bar < (timeSigTable != null ? timeSigTable.length : 1); ++bar) {
+            int sig = timeSigTable != null ? (timeSigTable[bar] & 0xFF) : 0x1c; // default 4/4
+            if (bar == 0 || sig != lastSig) {
+                javax.sound.midi.MetaMessage timeSigMsg = createTimeSignatureMeta(sig);
+                tsTrack.add(new javax.sound.midi.MidiEvent(timeSigMsg, tick));
+                sink.log(String.format("[DEBUG] Wrote MIDI time signature meta event at tick %d: %s (0x%02X) raw=%s",
+                    tick, decodeTimeSignature(sig), sig, Arrays.toString(timeSigMsg.getData())));
+                // Update numerator/denominator for tick calculation
+                int[] numDen = getNumeratorDenominator(sig);
+                numerator = numDen[0];
+                denominator = numDen[1];
+            }
+            lastSig = sig;
+            // Calculate ticks for this bar using current numerator/denominator
+            int quarterNotesPerBar = numerator * 4 / denominator; // e.g., 4/4 = 4, 3/4 = 3, 6/8 = 3
+            int ticksPerBar = quarterNotesPerBar * KseqConstants.MIDI_PPQN;
+            tick += ticksPerBar;
+        }
 
         buildTempoTrack(seq, data);
         buildSongTracks(seq, midi);
@@ -141,6 +161,55 @@ public final class KseqToMidi {
     }
 
     // ─────────────────────── SMF helpers ─────────────────────────────────---
+
+    /**
+     * Returns [numerator, denominator] for a KSEQ time signature byte.
+     */
+    private static int[] getNumeratorDenominator(int sig) {
+        switch (sig) {
+            case 0x04: return new int[]{1, 4};
+            case 0x0c: return new int[]{2, 4};
+            case 0x14: return new int[]{3, 4};
+            case 0x1c: return new int[]{4, 4};
+            case 0x24: return new int[]{5, 4};
+            case 0x2c: return new int[]{6, 4};
+            case 0x34: return new int[]{7, 4};
+            case 0x3c: return new int[]{8, 4};
+            case 0x44: return new int[]{9, 4};
+            case 0x4c: return new int[]{10, 4};
+            case 0x54: return new int[]{11, 4};
+            case 0x5c: return new int[]{12, 4};
+            case 0x02: return new int[]{1, 8};
+            case 0x0a: return new int[]{2, 8};
+            case 0x12: return new int[]{3, 8};
+            case 0x1a: return new int[]{4, 8};
+            case 0x22: return new int[]{5, 8};
+            case 0x2a: return new int[]{6, 8};
+            case 0x32: return new int[]{7, 8};
+            case 0x3a: return new int[]{8, 8};
+            case 0x42: return new int[]{9, 8};
+            case 0x4a: return new int[]{10, 8};
+            case 0x52: return new int[]{11, 8};
+            case 0x5a: return new int[]{12, 8};
+            case 0x06: return new int[]{1, 2};
+            case 0x0e: return new int[]{2, 2};
+            case 0x16: return new int[]{3, 2};
+            case 0x1e: return new int[]{4, 2};
+            case 0x01: return new int[]{1, 16};
+            case 0x09: return new int[]{2, 16};
+            case 0x11: return new int[]{3, 16};
+            case 0x19: return new int[]{4, 16};
+            case 0x21: return new int[]{5, 16};
+            case 0x29: return new int[]{6, 16};
+            case 0x31: return new int[]{7, 16};
+            case 0x41: return new int[]{9, 16};
+            case 0x59: return new int[]{12, 16};
+            case 0x71: return new int[]{15, 16};
+            case 0xa1: return new int[]{21, 16};
+            default: return new int[]{4, 4}; // fallback to 4/4
+        }
+    }
+
 
     /**
      * Creates a MIDI time signature MetaMessage from a KSEQ time signature byte.
