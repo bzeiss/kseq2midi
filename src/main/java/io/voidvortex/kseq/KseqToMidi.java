@@ -135,21 +135,41 @@ public final class KseqToMidi {
             shift = 0;
             if (!checkComKseq(d, KSEQ_COMKSEQ_OFFSET)) {
                 int found = scanForComKseq(d);
-                if (found == -1)
-                    throw new IllegalArgumentException("COM-KSEQ marker not found in KSEQ file");
-                shift = found - KSEQ_COMKSEQ_OFFSET;
+                if (found == -1) {
+                    // Try alternate offset (ALLDATA_COMKSEQ_OFFSET)
+                    if (!checkComKseq(d, ALLDATA_COMKSEQ_OFFSET)) {
+                        throw new IllegalArgumentException("COM-KSEQ marker not found in KSEQ file");
+                    } else {
+                        shift = ALLDATA_COMKSEQ_OFFSET - KSEQ_COMKSEQ_OFFSET;
+                    }
+                } else {
+                    shift = found - KSEQ_COMKSEQ_OFFSET;
+                }
             }
         } else if (HEADER_ID_TEXT_ALLDATA.equals(header)) {
             allData = true;
             shift = ALLDATA_OFFSET_SHIFT;
             if (!checkComKseq(d, ALLDATA_COMKSEQ_OFFSET)) {
                 int found = scanForComKseq(d);
-                if (found == -1)
-                    throw new IllegalArgumentException("COM-KSEQ marker not found in AllData file");
-                shift = found - KSEQ_COMKSEQ_OFFSET;
+                if (found == -1) {
+                    // Try alternate offset (KSEQ_COMKSEQ_OFFSET)
+                    if (!checkComKseq(d, KSEQ_COMKSEQ_OFFSET)) {
+                        throw new IllegalArgumentException("COM-KSEQ marker not found in AllData file");
+                    } else {
+                        shift = KSEQ_COMKSEQ_OFFSET - ALLDATA_COMKSEQ_OFFSET + ALLDATA_OFFSET_SHIFT;
+                    }
+                } else {
+                    shift = found - KSEQ_COMKSEQ_OFFSET;
+                }
             }
         } else {
-            throw new IllegalArgumentException("Not a KSEQ or AllData file");
+            int found = scanForComKseq(d);
+            if (found != -1) {
+                allData = false;
+                shift = found - KSEQ_COMKSEQ_OFFSET;
+            } else {
+                throw new IllegalArgumentException("Not a KSEQ or AllData file");
+            }
         }
         return new FileTypeInfo(allData, shift);
     }
