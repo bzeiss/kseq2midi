@@ -47,7 +47,7 @@ public final class KseqToMidi {
             for (int bar = 0; bar < timeSigTable.length; ++bar) {
                 int sig = timeSigTable[bar] & 0xFF;
                 if (bar == 0 || sig != lastSig) {
-                    TimeSignatureInfo tsInfo = getTimeSignatureInfo(sig);
+                    io.voidvortex.kseq.TimeSignatureInfo tsInfo = io.voidvortex.kseq.TimeSignatureInfo.getTimeSignatureInfo(sig);
                 sink.log(String.format("[DEBUG] Time signature change at bar %d: %s (0x%02X)", bar + 1, tsInfo.humanReadable, sig));
                 }
                 lastSig = sig;
@@ -81,11 +81,11 @@ public final class KseqToMidi {
         Track tsTrack = seq.createTrack();
         int lastSig = -1;
         int tick = 0;
-        TimeSignatureInfo tsInfo = getTimeSignatureInfo(0x1c); // default 4/4
+        io.voidvortex.kseq.TimeSignatureInfo tsInfo = io.voidvortex.kseq.TimeSignatureInfo.getTimeSignatureInfo(0x1c); // default 4/4
         for (int bar = 0; bar < (timeSigTable != null ? timeSigTable.length : 1); ++bar) {
             int sig = timeSigTable != null ? (timeSigTable[bar] & 0xFF) : 0x1c; // default 4/4
             if (bar == 0 || sig != lastSig) {
-                tsInfo = getTimeSignatureInfo(sig);
+                tsInfo = io.voidvortex.kseq.TimeSignatureInfo.getTimeSignatureInfo(sig);
                 tsTrack.add(new javax.sound.midi.MidiEvent(tsInfo.metaMessage, tick));
                 sink.log(String.format("[DEBUG] Wrote MIDI time signature meta event at tick %d: %s (0x%02X) raw=%s",
                     tick, tsInfo.humanReadable, sig, Arrays.toString(tsInfo.metaMessage.getData())));
@@ -105,93 +105,6 @@ public final class KseqToMidi {
         if (debugFlag)
             System.out.println("Written " + out);
     }
-
-    /**
-     * Given a KSEQ time signature byte, returns an object containing:
-     * - human-readable string (e.g., "4/4")
-     * - numerator
-     * - denominator
-     * - MetaMessage (MIDI time signature event)
-     */
-    private static TimeSignatureInfo getTimeSignatureInfo(int sig) {
-        int numerator, denominator;
-        String human;
-        switch (sig) {
-            case 0x04: numerator = 1; denominator = 4; human = "1/4"; break;
-            case 0x0c: numerator = 2; denominator = 4; human = "2/4"; break;
-            case 0x14: numerator = 3; denominator = 4; human = "3/4"; break;
-            case 0x1c: numerator = 4; denominator = 4; human = "4/4"; break;
-            case 0x24: numerator = 5; denominator = 4; human = "5/4"; break;
-            case 0x2c: numerator = 6; denominator = 4; human = "6/4"; break;
-            case 0x34: numerator = 7; denominator = 4; human = "7/4"; break;
-            case 0x3c: numerator = 8; denominator = 4; human = "8/4"; break;
-            case 0x44: numerator = 9; denominator = 4; human = "9/4"; break;
-            case 0x4c: numerator = 10; denominator = 4; human = "10/4"; break;
-            case 0x54: numerator = 11; denominator = 4; human = "11/4"; break;
-            case 0x5c: numerator = 12; denominator = 4; human = "12/4"; break;
-            case 0x02: numerator = 1; denominator = 8; human = "1/8"; break;
-            case 0x0a: numerator = 2; denominator = 8; human = "2/8"; break;
-            case 0x12: numerator = 3; denominator = 8; human = "3/8"; break;
-            case 0x1a: numerator = 4; denominator = 8; human = "4/8"; break;
-            case 0x22: numerator = 5; denominator = 8; human = "5/8"; break;
-            case 0x2a: numerator = 6; denominator = 8; human = "6/8"; break;
-            case 0x32: numerator = 7; denominator = 8; human = "7/8"; break;
-            case 0x3a: numerator = 8; denominator = 8; human = "8/8"; break;
-            case 0x42: numerator = 9; denominator = 8; human = "9/8"; break;
-            case 0x4a: numerator = 10; denominator = 8; human = "10/8"; break;
-            case 0x52: numerator = 11; denominator = 8; human = "11/8"; break;
-            case 0x5a: numerator = 12; denominator = 8; human = "12/8"; break;
-            case 0x06: numerator = 1; denominator = 2; human = "1/2"; break;
-            case 0x0e: numerator = 2; denominator = 2; human = "2/2"; break;
-            case 0x16: numerator = 3; denominator = 2; human = "3/2"; break;
-            case 0x1e: numerator = 4; denominator = 2; human = "4/2"; break;
-            case 0x01: numerator = 1; denominator = 16; human = "1/16"; break;
-            case 0x09: numerator = 2; denominator = 16; human = "2/16"; break;
-            case 0x11: numerator = 3; denominator = 16; human = "3/16"; break;
-            case 0x19: numerator = 4; denominator = 16; human = "4/16"; break;
-            case 0x21: numerator = 5; denominator = 16; human = "5/16"; break;
-            case 0x29: numerator = 6; denominator = 16; human = "6/16"; break;
-            case 0x31: numerator = 7; denominator = 16; human = "7/16"; break;
-            case 0x41: numerator = 9; denominator = 16; human = "9/16"; break;
-            case 0x59: numerator = 12; denominator = 16; human = "12/16"; break;
-            case 0x71: numerator = 15; denominator = 16; human = "15/16"; break;
-            case 0xa1: numerator = 21; denominator = 16; human = "21/16"; break;
-            default: numerator = 4; denominator = 4; human = String.format("unknown(0x%02X)", sig); break;
-        }
-        int midiDenom = 0;
-        int d = denominator;
-        while (d > 1) {
-            d >>= 1;
-            midiDenom++;
-        }
-        byte[] data = new byte[] {
-            (byte)numerator,
-            (byte)midiDenom,
-            24, // MIDI Clocks per metronome click (default: 24 = quarter note)
-            8   // 32nd notes per 24 MIDI clocks (default: 8)
-        };
-        MetaMessage msg;
-        try {
-            msg = new MetaMessage(0x58, data, 4);
-        } catch (javax.sound.midi.InvalidMidiDataException e) {
-            throw new IllegalStateException(e);
-        }
-        return new TimeSignatureInfo(human, numerator, denominator, msg);
-    }
-
-    private static class TimeSignatureInfo {
-        final String humanReadable;
-        final int numerator;
-        final int denominator;
-        final MetaMessage metaMessage;
-        TimeSignatureInfo(String humanReadable, int numerator, int denominator, MetaMessage metaMessage) {
-            this.humanReadable = humanReadable;
-            this.numerator = numerator;
-            this.denominator = denominator;
-            this.metaMessage = metaMessage;
-        }
-    }
-
 
     private static void buildTempoTrack(Sequence seq, byte[] data) {
         Track t = seq.createTrack();
