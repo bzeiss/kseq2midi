@@ -27,6 +27,7 @@ final class TrackParser {
     private final DebugSink dbg;                         // ⇐ may be NOOP
     private final int offsetShift;
     private double currentKseqBpm; // Store current tempo in BPM
+    private double initialTempoBpm; // Store initial tempo in BPM
 
     /* parsing cursor */
     private int ptr, tick;
@@ -45,6 +46,7 @@ final class TrackParser {
         this.trackChannels = trackChannels;
         this.dbg = Objects.requireNonNullElse(sink, DebugSink.NOOP);
         this.offsetShift = offsetShift;
+        this.initialTempoBpm = initialTempoBpm;
         this.currentKseqBpm = initialTempoBpm; // Initialize current BPM
     }
 
@@ -280,10 +282,12 @@ final class TrackParser {
             int kseqPercentageValue = (byte1 << 7) | byte2; // Raw value from KSEQ (0-16383)
             double tempoFromKseq = kseqPercentageValue / 10.0; // e.g., 1000 -> 100.0 (representing 100.0%)
 
-            this.currentKseqBpm = tempoFromKseq;
+            double newKseqBpm = initialTempoBpm * (tempoFromKseq/100);
+            dbg.log("Tempo change: initial=" + initialTempoBpm + ", old=" + this.currentKseqBpm + ", new=" + newKseqBpm);
+            this.currentKseqBpm = newKseqBpm;
 
             // Convert KSEQ BPM to MIDI tempo (microseconds per quarter note)
-            int midiTempo = (this.currentKseqBpm > 0) ? (int) (60000000 / this.currentKseqBpm) : 0;
+            int midiTempo = (this.currentKseqBpm > 0) ? (int) (60000000 / Math.round(this.currentKseqBpm)) : 0;
 
             byte[] tempoDataBytes = new byte[3];
             tempoDataBytes[0] = (byte) ((midiTempo >> 16) & 0xFF);

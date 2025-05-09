@@ -97,6 +97,7 @@ public final class KseqToMidi {
             tick += ticksPerBar;
         }
 
+        sink.log(String.format("[DEBUG] Initial tempo from 0x041C: %d BPM", data[getOffset(KseqConstants.TEMPO_OFFSET)] & 0xFF));
         buildTempoTrack(seq, data);
         buildSongTracks(seq, midi);
 

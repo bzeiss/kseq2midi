@@ -85,7 +85,9 @@ public class TimeSignatureInfo {
                 Map.entry(0x41, new TimeSignatureInfo("9/16", 9, 16)),
                 Map.entry(0x59, new TimeSignatureInfo("12/16", 12, 16)),
                 Map.entry(0x71, new TimeSignatureInfo("15/16", 15, 16)),
-                Map.entry(0xa1, new TimeSignatureInfo("21/16", 21, 16)));
+                Map.entry(0xa1, new TimeSignatureInfo("21/16", 21, 16)),
+                Map.entry(0x62, new TimeSignatureInfo("13/8", 13, 18))
+        );
     }
 
     public static TimeSignatureInfo getTimeSignatureInfo(int sig) {
