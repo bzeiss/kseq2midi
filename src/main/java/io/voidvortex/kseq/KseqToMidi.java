@@ -33,8 +33,30 @@ public final class KseqToMidi {
         Map<Integer, List<javax.sound.midi.MidiEvent>> midi = new HashMap<>();
         Map<Integer, Integer> midiChannel = new HashMap<>();
         readTrackHeaderInfo(data, midi, midiChannel);
+
+        // Read initial global tempo from header
+        int initialGlobalTempoBpm = data[getOffset(TEMPO_OFFSET)] & 0xFF;
+
         DebugSink sink = debugFlag ? System.out::println : DebugSink.NOOP;
-        TrackParser parser = new TrackParser(data, midi, midiChannel, sink, fileTypeInfo.offsetShift);
+
+        // --- Read time signature table and output changes ---
+        int tableOffset = getOffset(KseqConstants.TIME_SIG_TABLE_OFFSET);
+        if (data.length >= tableOffset + KseqConstants.TIME_SIG_TABLE_LENGTH) {
+            byte[] timeSigTable = Arrays.copyOfRange(data, tableOffset, tableOffset + KseqConstants.TIME_SIG_TABLE_LENGTH);
+            int lastSig = -1;
+            for (int bar = 0; bar < timeSigTable.length; ++bar) {
+                int sig = timeSigTable[bar] & 0xFF;
+                if (bar == 0 || sig != lastSig) {
+                    io.voidvortex.kseq.TimeSignatureInfo tsInfo = io.voidvortex.kseq.TimeSignatureInfo.getTimeSignatureInfo(sig);
+                sink.log(String.format("[DEBUG] Time signature change at bar %d: %s (0x%02X)", bar + 1, tsInfo.humanReadable, sig));
+                }
+                lastSig = sig;
+            }
+        } else {
+            sink.log("[DEBUG] Time signature table not present or file too short.");
+        }
+
+        TrackParser parser = new TrackParser(data, midi, midiChannel, sink, fileTypeInfo.offsetShift, initialGlobalTempoBpm);
         parser.parseLinearTracks();
 
         int patternMarker = findFirstPatternMarker(data);
@@ -46,7 +68,36 @@ public final class KseqToMidi {
             }
         }
 
-        Sequence seq = new Sequence(Sequence.PPQ, MIDI_PPQN);
+        Sequence seq = new Sequence(Sequence.PPQ, KseqConstants.MIDI_PPQN);
+
+        // Set all time signature changes as MIDI meta events at the correct ticks
+
+        int tsTableOffset = getOffset(KseqConstants.TIME_SIG_TABLE_OFFSET);
+        int tsTableLen = KseqConstants.TIME_SIG_TABLE_LENGTH;
+        byte[] timeSigTable = null;
+        if (data.length >= tsTableOffset + tsTableLen) {
+            timeSigTable = Arrays.copyOfRange(data, tsTableOffset, tsTableOffset + tsTableLen);
+        }
+        Track tsTrack = seq.createTrack();
+        int lastSig = -1;
+        int tick = 0;
+        io.voidvortex.kseq.TimeSignatureInfo tsInfo = io.voidvortex.kseq.TimeSignatureInfo.getTimeSignatureInfo(0x1c); // default 4/4
+        for (int bar = 0; bar < (timeSigTable != null ? timeSigTable.length : 1); ++bar) {
+            int sig = timeSigTable != null ? (timeSigTable[bar] & 0xFF) : 0x1c; // default 4/4
+            if (bar == 0 || sig != lastSig) {
+                tsInfo = io.voidvortex.kseq.TimeSignatureInfo.getTimeSignatureInfo(sig);
+                tsTrack.add(new javax.sound.midi.MidiEvent(tsInfo.metaMessage, tick));
+                sink.log(String.format("[DEBUG] Wrote MIDI time signature meta event at tick %d: %s (0x%02X) raw=%s",
+                    tick, tsInfo.humanReadable, sig, Arrays.toString(tsInfo.metaMessage.getData())));
+            }
+            lastSig = sig;
+            // Calculate ticks for this bar using current numerator/denominator
+            int quarterNotesPerBar = tsInfo.numerator * 4 / tsInfo.denominator; // e.g., 4/4 = 4, 3/4 = 3, 6/8 = 3
+            int ticksPerBar = quarterNotesPerBar * KseqConstants.MIDI_PPQN;
+            tick += ticksPerBar;
+        }
+
+        sink.log(String.format("[DEBUG] Initial tempo from 0x041C: %d BPM", data[getOffset(KseqConstants.TEMPO_OFFSET)] & 0xFF));
         buildTempoTrack(seq, data);
         buildSongTracks(seq, midi);
 
@@ -55,8 +106,6 @@ public final class KseqToMidi {
         if (debugFlag)
             System.out.println("Written " + out);
     }
-
-    // ─────────────────────── SMF helpers ─────────────────────────────────---
 
     private static void buildTempoTrack(Sequence seq, byte[] data) {
         Track t = seq.createTrack();

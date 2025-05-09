@@ -6,6 +6,7 @@
 package io.voidvortex.kseq;
 
 import javax.sound.midi.MidiEvent;
+import javax.sound.midi.MetaMessage;
 import javax.sound.midi.ShortMessage;
 import java.util.*;
 
@@ -25,6 +26,8 @@ final class TrackParser {
     private final Map<Integer, Integer> trackChannels;
     private final DebugSink dbg;                         // ⇐ may be NOOP
     private final int offsetShift;
+    private double currentKseqBpm; // Store current tempo in BPM
+    private double initialTempoBpm; // Store initial tempo in BPM
 
     /* parsing cursor */
     private int ptr, tick;
@@ -35,13 +38,16 @@ final class TrackParser {
                 Map<Integer, List<MidiEvent>> midiEvents,
                 Map<Integer, Integer> trackChannels,
                 DebugSink sink,
-                int offsetShift) {
+                int offsetShift,
+                int initialTempoBpm) { // Added initialTempoBpm
 
         this.data = data;
         this.target = midiEvents;
         this.trackChannels = trackChannels;
         this.dbg = Objects.requireNonNullElse(sink, DebugSink.NOOP);
         this.offsetShift = offsetShift;
+        this.initialTempoBpm = initialTempoBpm;
+        this.currentKseqBpm = initialTempoBpm; // Initialize current BPM
     }
 
     /* ───────────────── public façade ────────────────────────────────── */
@@ -62,7 +68,7 @@ final class TrackParser {
             /* ── track start ─────────────────────────────────────────── */
             if (b == MARKER_TRACK_START) {
                 int nxt = u8(data[ptr + 1]);
-                if (nxt == 0x0F) break;                 // pattern region begins
+                if (nxt == MARKER_PATTERN_EVENT) break;                 // pattern region begins
 
                 track = nxt + 1;
                 tick = 0;
@@ -129,7 +135,7 @@ final class TrackParser {
             if (b == MARKER_SEQUENCE_END) break;
             if (b == MARKER_TRACK_START) {
                 int nxt = u8(data[scanPtr + 1]);
-                if (nxt == 0x0F) break; // pattern region begins
+                if (nxt == MARKER_PATTERN_EVENT) break; // pattern region begins
                 scanTrack = nxt + 1;
                 scanTick = 0;
                 scanPtr += 2;
@@ -142,22 +148,20 @@ final class TrackParser {
             }
             if (scanTrack != -1) {
                 // Check for note events
-                if ((b & 0xF0) == 0xD0) {
-                    // long note
+                if ((b & MASK_NOTE_EVENT_TYPE) == TYPE_NOTE_LONG) { // long note
                     return scanTick;
                 }
-                if ((b & 0xF0) == 0xC0) {
-                    // short note
+                if ((b & MASK_NOTE_EVENT_TYPE) == TYPE_NOTE_SHORT) { // short note
                     return scanTick;
                 }
                 // Delta time handling (copy from parseEvent)
-                if ((b & 0xE0) == 0xA0) {
+                if ((b & MASK_DELTA_EVENT_TYPE) == TYPE_DELTA_LONG) {
                     int d = ((b & 0x1F) << 7) | u7(data[scanPtr + 1]);
                     scanTick += d;
                     scanPtr += 2;
                     continue;
                 }
-                if ((b & 0xE0) == 0x80) {
+                if ((b & MASK_DELTA_EVENT_TYPE) == TYPE_DELTA_SHORT) {
                     int d = b & 0x1F;
                     scanTick += d;
                     scanPtr += 1;
@@ -190,12 +194,12 @@ final class TrackParser {
         final String head = hdr(currentTick, track, b);   // common prefix
 
         /* ─── delta-time ────────────────────────────────────────────── */
-        if ((b & 0xE0) == 0xA0) {              // long delta
+        if ((b & MASK_DELTA_EVENT_TYPE) == TYPE_DELTA_LONG) {              // long delta
             int d = ((b & 0x1F) << 7) | u7(data[ptr + 1]);
             dbg.log(head + "Δ " + d);
             return (d << 16) | 2;
         }
-        if ((b & 0xE0) == 0x80) {              // short delta
+        if ((b & MASK_DELTA_EVENT_TYPE) == TYPE_DELTA_SHORT) {              // short delta
             int d = b & 0x1F;
             dbg.log(head + "Δ " + d);
             return (d << 16) | 1;
@@ -206,7 +210,7 @@ final class TrackParser {
         final List<MidiEvent> list = target.get(track);
 
         /* ─── notes ─────────────────────────────────────────────────── */
-        if ((b & 0xF0) == 0xD0) {              // long note
+        if ((b & MASK_NOTE_EVENT_TYPE) == TYPE_NOTE_LONG) {              // long note
             int len = (((b & 0x0F) << 7) | u7(data[ptr + 1])) * 4;
             int note = u7(data[ptr + 2]);
             int vel = u7(data[ptr + 3]);
@@ -217,7 +221,7 @@ final class TrackParser {
                     noteName(note), vel, len));
             return 4;
         }
-        if ((b & 0xF0) == 0xC0) {              // short note
+        if ((b & MASK_NOTE_EVENT_TYPE) == TYPE_NOTE_SHORT) {              // short note
             int len = (b & 0x0F) * 4;
             int note = u7(data[ptr + 1]);
             int vel = u7(data[ptr + 2]);
@@ -230,7 +234,7 @@ final class TrackParser {
         }
 
         /* ─── channel messages ─────────────────────────────────────── */
-        if (b == 0xFA && is7(data[ptr + 1], data[ptr + 2])) { // poly AT
+        if (b == MARKER_POLY_AFTERTOUCH && is7(data[ptr + 1], data[ptr + 2])) { // poly AT
             int note = u7(data[ptr + 1]);
             int pr = u7(data[ptr + 2]);
             list.add(createShort(ShortMessage.POLY_PRESSURE, ch, note, pr, currentTick));
@@ -239,7 +243,7 @@ final class TrackParser {
                     noteName(note), pr));
             return 3;
         }
-        if (b == 0xFE && is7(data[ptr + 1], data[ptr + 2])) { // pitch bend
+        if (b == MARKER_PITCH_BEND && is7(data[ptr + 1], data[ptr + 2])) { // pitch bend
             int lsb = u7(data[ptr + 1]);
             int msb = u7(data[ptr + 2]);
             list.add(createShort(ShortMessage.PITCH_BEND, ch, lsb, msb, currentTick));
@@ -248,7 +252,7 @@ final class TrackParser {
             dbg.log(head + "PITCH_BEND    val=" + value);
             return 3;
         }
-        if (b == 0xFB && is7(data[ptr + 1], data[ptr + 2])) { // control change
+        if (b == MARKER_CONTROL_CHANGE && is7(data[ptr + 1], data[ptr + 2])) { // control change
             int ctl = u7(data[ptr + 1]);
             int val = u7(data[ptr + 2]);
             list.add(createShort(ShortMessage.CONTROL_CHANGE, ch, ctl, val, currentTick));
@@ -256,14 +260,14 @@ final class TrackParser {
             dbg.log(head + String.format("CONTROL_CHG   ctl=%d val=%d", ctl, val));
             return 3;
         }
-        if (b == 0xFC && is7(data[ptr + 1])) {                // program change
+        if (b == MARKER_PROGRAM_CHANGE && is7(data[ptr + 1])) {                // program change
             int pgm = u7(data[ptr + 1]);
             list.add(createShort(ShortMessage.PROGRAM_CHANGE, ch, pgm, 0, currentTick));
 
             dbg.log(head + "PROGRAM_CHG   pgm=" + pgm);
             return 2;
         }
-        if (b == 0xFD && is7(data[ptr + 1])) {                // channel AT
+        if (b == MARKER_CHANNEL_AFTERTOUCH && is7(data[ptr + 1])) {                // channel AT
             int pr = u7(data[ptr + 1]);
             list.add(createShort(ShortMessage.CHANNEL_PRESSURE, ch, pr, 0, currentTick));
 
@@ -271,12 +275,42 @@ final class TrackParser {
             return 2;
         }
 
+        // Tempo Change (Percentage-based)
+        if (b == MARKER_TEMPO_CHANGE && is7(data[ptr + 1], data[ptr + 2])) {
+            int byte1 = u7(data[ptr + 1]);
+            int byte2 = u7(data[ptr + 2]);
+            int kseqPercentageValue = (byte1 << 7) | byte2; // Raw value from KSEQ (0-16383)
+            double tempoFromKseq = kseqPercentageValue / 10.0; // e.g., 1000 -> 100.0 (representing 100.0%)
+
+            double newKseqBpm = initialTempoBpm * (tempoFromKseq/100);
+            dbg.log("Tempo change: initial=" + initialTempoBpm + ", old=" + this.currentKseqBpm + ", new=" + newKseqBpm);
+            this.currentKseqBpm = newKseqBpm;
+
+            // Convert KSEQ BPM to MIDI tempo (microseconds per quarter note)
+            int midiTempo = (this.currentKseqBpm > 0) ? (int) (60000000 / Math.round(this.currentKseqBpm)) : 0;
+
+            byte[] tempoDataBytes = new byte[3];
+            tempoDataBytes[0] = (byte) ((midiTempo >> 16) & 0xFF);
+            tempoDataBytes[1] = (byte) ((midiTempo >> 8) & 0xFF);
+            tempoDataBytes[2] = (byte) (midiTempo & 0xFF);
+
+            try {
+                MetaMessage tempoMessage = new MetaMessage(0x51, tempoDataBytes, 3); // MIDI Meta Event type for Set Tempo
+                list.add(new MidiEvent(tempoMessage, currentTick)); // 'list' is defined earlier for the current track
+                dbg.log(head + String.format("TEMPO_CHG_P   val=%d (%.1f%%) -> new_bpm=%.2f midi_tempo=%d",
+                        kseqPercentageValue, tempoFromKseq, this.currentKseqBpm, midiTempo));
+            } catch (Exception e) { // InvalidMidiDataException
+                dbg.log(head + "TEMPO_CHG_P   ERROR creating tempo event: " + e.getMessage());
+            }
+            return 3; // Consumed 0xF3 + 2 data bytes
+        }
+
         /* ─── meta-ish / ignored bytes ─────────────────────────────── */
-        if (b == 0xF5) {
+        if (b == MARKER_MEASURE_MARK) {
             dbg.log(head + "MEASURE_MARK");
             return 1;
         }
-        if (b == 0xF8) {
+        if (b == MARKER_NO_OPERATION) {
             dbg.log(head + "NOP");
             return 1;
         }
@@ -327,18 +361,21 @@ final class TrackParser {
      */
     private static String kseqMnemonic(int b) {
         return switch (b) {
-            case 0xFC -> "PROGRAM_CHG";
-            case 0xFB -> "CONTROL_CHG";
-            case 0xFA -> "POLY_PRESS";
-            case 0xFD -> "CHANNEL_AT";
-            case 0xFE -> "PITCH_BEND";
-            case 0xF0 -> "TRACK_START";
-            case 0xF2 -> "TRACK_END";
-            case 0xF5 -> "MEASURE_MRK";
-            case 0xF8 -> "NOP";
+            case MARKER_PROGRAM_CHANGE -> "PROGRAM_CHG";
+            case MARKER_CONTROL_CHANGE -> "CONTROL_CHG";
+            case MARKER_POLY_AFTERTOUCH -> "POLY_PRESS";
+            case MARKER_CHANNEL_AFTERTOUCH -> "CHANNEL_AT";
+            case MARKER_PITCH_BEND -> "PITCH_BEND";
+            case MARKER_TRACK_START -> "TRACK_START";
+            case MARKER_TRACK_END -> "TRACK_END";
+            case MARKER_MEASURE_MARK -> "MEASURE_MRK";
+            case MARKER_NO_OPERATION -> "NOP";
+            case MARKER_TEMPO_CHANGE -> "TEMPO_CHG_P"; // Added for percentage tempo change
             default -> {
-                if ((b & 0xF0) == 0xC0) yield "NOTE_SHORT";
-                if ((b & 0xF0) == 0xD0) yield "NOTE_LONG";
+                if ((b & MASK_NOTE_EVENT_TYPE) == TYPE_NOTE_SHORT) yield "NOTE_SHORT";
+                if ((b & MASK_NOTE_EVENT_TYPE) == TYPE_NOTE_LONG) yield "NOTE_LONG";
+                if ((b & MASK_DELTA_EVENT_TYPE) == TYPE_DELTA_SHORT) yield "DELTA_SHORT"; // Added for completeness
+                if ((b & MASK_DELTA_EVENT_TYPE) == TYPE_DELTA_LONG) yield "DELTA_LONG";   // Added for completeness
                 yield "UNKNOWN";
             }
         };

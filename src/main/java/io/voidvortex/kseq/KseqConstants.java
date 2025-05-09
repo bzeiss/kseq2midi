@@ -43,13 +43,37 @@ public final class KseqConstants {
     public static final int PATTERN_CHAIN_OFFSET = 0x0BA1;
 
     // ───────────────────────── marker bytes ────────────────────────────
+    public static final int MARKER_PATTERN_EVENT = 0x0F; // Used with MARKER_TRACK_START for pattern definition
     public static final int MARKER_TRACK_START = 0xF0;
     public static final int MARKER_TRACK_END = 0xF2;
     public static final int MARKER_SEQUENCE_END = 0xF1;
+
+    // Event markers from kseq.bt, used in TrackParser.java
+    public static final int MARKER_TEMPO_CHANGE = 0xF3; // Added to support tempo change events
+    public static final int MARKER_POLY_AFTERTOUCH = 0xFA;
+    public static final int MARKER_CONTROL_CHANGE = 0xFB;
+    public static final int MARKER_PROGRAM_CHANGE = 0xFC;
+    public static final int MARKER_CHANNEL_AFTERTOUCH = 0xFD;
+    public static final int MARKER_PITCH_BEND = 0xFE;
+    public static final int MARKER_MEASURE_MARK = 0xF5;
+    public static final int MARKER_NO_OPERATION = 0xF8;
+
+    // Bitmasks for identifying event types, used in TrackParser.java
+    public static final int MASK_NOTE_EVENT_TYPE = 0xF0; // Used to check if an event is a note event
+    public static final int TYPE_NOTE_SHORT = 0xC0;      // 1100xxxx
+    public static final int TYPE_NOTE_LONG = 0xD0;       // 1101xxxx
+
+    public static final int MASK_DELTA_EVENT_TYPE = 0xE0; // Used to check if an event is a delta time event
+    public static final int TYPE_DELTA_SHORT = 0x80;     // 100xxxxx
+    public static final int TYPE_DELTA_LONG = 0xA0;      // 101xxxxx
 
     // Special case: pattern start is 0xF0 0x0F; first byte is same as track‑start
 
     // ──────────────────────────── MIDI ─────────────────────────────────
     public static final int VIRTUAL_PATTERN_TRACK = 16;   // where we dump unfolded patterns
     public static final int MIDI_PPQN = 96;
+
+    // Time signature table (bar signatures)
+    public static final int TIME_SIG_TABLE_OFFSET = 0x43C;
+    public static final int TIME_SIG_TABLE_LENGTH = 999;
 }
