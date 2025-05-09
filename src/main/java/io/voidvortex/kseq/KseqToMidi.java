@@ -47,7 +47,8 @@ public final class KseqToMidi {
             for (int bar = 0; bar < timeSigTable.length; ++bar) {
                 int sig = timeSigTable[bar] & 0xFF;
                 if (bar == 0 || sig != lastSig) {
-                    sink.log(String.format("[DEBUG] Time signature change at bar %d: %s (0x%02X)", bar + 1, decodeTimeSignature(sig), sig));
+                    TimeSignatureInfo tsInfo = getTimeSignatureInfo(sig);
+                sink.log(String.format("[DEBUG] Time signature change at bar %d: %s (0x%02X)", bar + 1, tsInfo.humanReadable, sig));
                 }
                 lastSig = sig;
             }
@@ -80,22 +81,18 @@ public final class KseqToMidi {
         Track tsTrack = seq.createTrack();
         int lastSig = -1;
         int tick = 0;
-        int numerator = 4, denominator = 4; // Defaults
+        TimeSignatureInfo tsInfo = getTimeSignatureInfo(0x1c); // default 4/4
         for (int bar = 0; bar < (timeSigTable != null ? timeSigTable.length : 1); ++bar) {
             int sig = timeSigTable != null ? (timeSigTable[bar] & 0xFF) : 0x1c; // default 4/4
             if (bar == 0 || sig != lastSig) {
-                javax.sound.midi.MetaMessage timeSigMsg = createTimeSignatureMeta(sig);
-                tsTrack.add(new javax.sound.midi.MidiEvent(timeSigMsg, tick));
+                tsInfo = getTimeSignatureInfo(sig);
+                tsTrack.add(new javax.sound.midi.MidiEvent(tsInfo.metaMessage, tick));
                 sink.log(String.format("[DEBUG] Wrote MIDI time signature meta event at tick %d: %s (0x%02X) raw=%s",
-                    tick, decodeTimeSignature(sig), sig, Arrays.toString(timeSigMsg.getData())));
-                // Update numerator/denominator for tick calculation
-                int[] numDen = getNumeratorDenominator(sig);
-                numerator = numDen[0];
-                denominator = numDen[1];
+                    tick, tsInfo.humanReadable, sig, Arrays.toString(tsInfo.metaMessage.getData())));
             }
             lastSig = sig;
             // Calculate ticks for this bar using current numerator/denominator
-            int quarterNotesPerBar = numerator * 4 / denominator; // e.g., 4/4 = 4, 3/4 = 3, 6/8 = 3
+            int quarterNotesPerBar = tsInfo.numerator * 4 / tsInfo.denominator; // e.g., 4/4 = 4, 3/4 = 3, 6/8 = 3
             int ticksPerBar = quarterNotesPerBar * KseqConstants.MIDI_PPQN;
             tick += ticksPerBar;
         }
@@ -110,154 +107,56 @@ public final class KseqToMidi {
     }
 
     /**
-     * Decodes a KSEQ time signature byte to a human-readable string like "4/4", "3/8", etc.
+     * Given a KSEQ time signature byte, returns an object containing:
+     * - human-readable string (e.g., "4/4")
+     * - numerator
+     * - denominator
+     * - MetaMessage (MIDI time signature event)
      */
-    private static String decodeTimeSignature(int sig) {
-        // Denominator mapping: lower nibble indicates denominator
-        // 0x0x = /4, 0xAx = /8, 0xEx = /2, 0x9x = /16 (see kseq.bt)
-        // But in kseq.bt, the encoding is explicit per value, so safest is a lookup
-        switch (sig) {
-            case 0x04: return "1/4";
-            case 0x0c: return "2/4";
-            case 0x14: return "3/4";
-            case 0x1c: return "4/4";
-            case 0x24: return "5/4";
-            case 0x2c: return "6/4";
-            case 0x34: return "7/4";
-            case 0x3c: return "8/4";
-            case 0x44: return "9/4";
-            case 0x4c: return "10/4";
-            case 0x54: return "11/4";
-            case 0x5c: return "12/4";
-            case 0x02: return "1/8";
-            case 0x0a: return "2/8";
-            case 0x12: return "3/8";
-            case 0x1a: return "4/8";
-            case 0x22: return "5/8";
-            case 0x2a: return "6/8";
-            case 0x32: return "7/8";
-            case 0x3a: return "8/8";
-            case 0x42: return "9/8";
-            case 0x4a: return "10/8";
-            case 0x52: return "11/8";
-            case 0x5a: return "12/8";
-            case 0x06: return "1/2";
-            case 0x0e: return "2/2";
-            case 0x16: return "3/2";
-            case 0x1e: return "4/2";
-            case 0x01: return "1/16";
-            case 0x09: return "2/16";
-            case 0x11: return "3/16";
-            case 0x19: return "4/16";
-            case 0x21: return "5/16";
-            case 0x29: return "6/16";
-            case 0x31: return "7/16";
-            case 0x41: return "9/16";
-            case 0x59: return "12/16";
-            case 0x71: return "15/16";
-            case 0xa1: return "21/16";
-            default: return String.format("unknown(0x%02X)", sig);
-        }
-    }
-
-    // ─────────────────────── SMF helpers ─────────────────────────────────---
-
-    /**
-     * Returns [numerator, denominator] for a KSEQ time signature byte.
-     */
-    private static int[] getNumeratorDenominator(int sig) {
-        switch (sig) {
-            case 0x04: return new int[]{1, 4};
-            case 0x0c: return new int[]{2, 4};
-            case 0x14: return new int[]{3, 4};
-            case 0x1c: return new int[]{4, 4};
-            case 0x24: return new int[]{5, 4};
-            case 0x2c: return new int[]{6, 4};
-            case 0x34: return new int[]{7, 4};
-            case 0x3c: return new int[]{8, 4};
-            case 0x44: return new int[]{9, 4};
-            case 0x4c: return new int[]{10, 4};
-            case 0x54: return new int[]{11, 4};
-            case 0x5c: return new int[]{12, 4};
-            case 0x02: return new int[]{1, 8};
-            case 0x0a: return new int[]{2, 8};
-            case 0x12: return new int[]{3, 8};
-            case 0x1a: return new int[]{4, 8};
-            case 0x22: return new int[]{5, 8};
-            case 0x2a: return new int[]{6, 8};
-            case 0x32: return new int[]{7, 8};
-            case 0x3a: return new int[]{8, 8};
-            case 0x42: return new int[]{9, 8};
-            case 0x4a: return new int[]{10, 8};
-            case 0x52: return new int[]{11, 8};
-            case 0x5a: return new int[]{12, 8};
-            case 0x06: return new int[]{1, 2};
-            case 0x0e: return new int[]{2, 2};
-            case 0x16: return new int[]{3, 2};
-            case 0x1e: return new int[]{4, 2};
-            case 0x01: return new int[]{1, 16};
-            case 0x09: return new int[]{2, 16};
-            case 0x11: return new int[]{3, 16};
-            case 0x19: return new int[]{4, 16};
-            case 0x21: return new int[]{5, 16};
-            case 0x29: return new int[]{6, 16};
-            case 0x31: return new int[]{7, 16};
-            case 0x41: return new int[]{9, 16};
-            case 0x59: return new int[]{12, 16};
-            case 0x71: return new int[]{15, 16};
-            case 0xa1: return new int[]{21, 16};
-            default: return new int[]{4, 4}; // fallback to 4/4
-        }
-    }
-
-
-    /**
-     * Creates a MIDI time signature MetaMessage from a KSEQ time signature byte.
-     * Supports only standard signatures (e.g., 4/4, 3/4, etc.).
-     */
-    private static MetaMessage createTimeSignatureMeta(int sig) {
+    private static TimeSignatureInfo getTimeSignatureInfo(int sig) {
         int numerator, denominator;
+        String human;
         switch (sig) {
-            case 0x04: numerator = 1; denominator = 4; break;
-            case 0x0c: numerator = 2; denominator = 4; break;
-            case 0x14: numerator = 3; denominator = 4; break;
-            case 0x1c: numerator = 4; denominator = 4; break;
-            case 0x24: numerator = 5; denominator = 4; break;
-            case 0x2c: numerator = 6; denominator = 4; break;
-            case 0x34: numerator = 7; denominator = 4; break;
-            case 0x3c: numerator = 8; denominator = 4; break;
-            case 0x44: numerator = 9; denominator = 4; break;
-            case 0x4c: numerator = 10; denominator = 4; break;
-            case 0x54: numerator = 11; denominator = 4; break;
-            case 0x5c: numerator = 12; denominator = 4; break;
-            case 0x02: numerator = 1; denominator = 8; break;
-            case 0x0a: numerator = 2; denominator = 8; break;
-            case 0x12: numerator = 3; denominator = 8; break;
-            case 0x1a: numerator = 4; denominator = 8; break;
-            case 0x22: numerator = 5; denominator = 8; break;
-            case 0x2a: numerator = 6; denominator = 8; break;
-            case 0x32: numerator = 7; denominator = 8; break;
-            case 0x3a: numerator = 8; denominator = 8; break;
-            case 0x42: numerator = 9; denominator = 8; break;
-            case 0x4a: numerator = 10; denominator = 8; break;
-            case 0x52: numerator = 11; denominator = 8; break;
-            case 0x5a: numerator = 12; denominator = 8; break;
-            case 0x06: numerator = 1; denominator = 2; break;
-            case 0x0e: numerator = 2; denominator = 2; break;
-            case 0x16: numerator = 3; denominator = 2; break;
-            case 0x1e: numerator = 4; denominator = 2; break;
-            case 0x01: numerator = 1; denominator = 16; break;
-            case 0x09: numerator = 2; denominator = 16; break;
-            case 0x11: numerator = 3; denominator = 16; break;
-            case 0x19: numerator = 4; denominator = 16; break;
-            case 0x21: numerator = 5; denominator = 16; break;
-            case 0x29: numerator = 6; denominator = 16; break;
-            case 0x31: numerator = 7; denominator = 16; break;
-            case 0x41: numerator = 9; denominator = 16; break;
-            case 0x59: numerator = 12; denominator = 16; break;
-            case 0x71: numerator = 15; denominator = 16; break;
-            case 0xa1: numerator = 21; denominator = 16; break;
-            default: numerator = 4; denominator = 4; break; // fallback to 4/4
+            case 0x04: numerator = 1; denominator = 4; human = "1/4"; break;
+            case 0x0c: numerator = 2; denominator = 4; human = "2/4"; break;
+            case 0x14: numerator = 3; denominator = 4; human = "3/4"; break;
+            case 0x1c: numerator = 4; denominator = 4; human = "4/4"; break;
+            case 0x24: numerator = 5; denominator = 4; human = "5/4"; break;
+            case 0x2c: numerator = 6; denominator = 4; human = "6/4"; break;
+            case 0x34: numerator = 7; denominator = 4; human = "7/4"; break;
+            case 0x3c: numerator = 8; denominator = 4; human = "8/4"; break;
+            case 0x44: numerator = 9; denominator = 4; human = "9/4"; break;
+            case 0x4c: numerator = 10; denominator = 4; human = "10/4"; break;
+            case 0x54: numerator = 11; denominator = 4; human = "11/4"; break;
+            case 0x5c: numerator = 12; denominator = 4; human = "12/4"; break;
+            case 0x02: numerator = 1; denominator = 8; human = "1/8"; break;
+            case 0x0a: numerator = 2; denominator = 8; human = "2/8"; break;
+            case 0x12: numerator = 3; denominator = 8; human = "3/8"; break;
+            case 0x1a: numerator = 4; denominator = 8; human = "4/8"; break;
+            case 0x22: numerator = 5; denominator = 8; human = "5/8"; break;
+            case 0x2a: numerator = 6; denominator = 8; human = "6/8"; break;
+            case 0x32: numerator = 7; denominator = 8; human = "7/8"; break;
+            case 0x3a: numerator = 8; denominator = 8; human = "8/8"; break;
+            case 0x42: numerator = 9; denominator = 8; human = "9/8"; break;
+            case 0x4a: numerator = 10; denominator = 8; human = "10/8"; break;
+            case 0x52: numerator = 11; denominator = 8; human = "11/8"; break;
+            case 0x5a: numerator = 12; denominator = 8; human = "12/8"; break;
+            case 0x06: numerator = 1; denominator = 2; human = "1/2"; break;
+            case 0x0e: numerator = 2; denominator = 2; human = "2/2"; break;
+            case 0x16: numerator = 3; denominator = 2; human = "3/2"; break;
+            case 0x1e: numerator = 4; denominator = 2; human = "4/2"; break;
+            case 0x01: numerator = 1; denominator = 16; human = "1/16"; break;
+            case 0x09: numerator = 2; denominator = 16; human = "2/16"; break;
+            case 0x11: numerator = 3; denominator = 16; human = "3/16"; break;
+            case 0x19: numerator = 4; denominator = 16; human = "4/16"; break;
+            case 0x21: numerator = 5; denominator = 16; human = "5/16"; break;
+            case 0x29: numerator = 6; denominator = 16; human = "6/16"; break;
+            case 0x31: numerator = 7; denominator = 16; human = "7/16"; break;
+            case 0x41: numerator = 9; denominator = 16; human = "9/16"; break;
+            case 0x59: numerator = 12; denominator = 16; human = "12/16"; break;
+            case 0x71: numerator = 15; denominator = 16; human = "15/16"; break;
+            case 0xa1: numerator = 21; denominator = 16; human = "21/16"; break;
+            default: numerator = 4; denominator = 4; human = String.format("unknown(0x%02X)", sig); break;
         }
         int midiDenom = 0;
         int d = denominator;
@@ -271,10 +170,25 @@ public final class KseqToMidi {
             24, // MIDI Clocks per metronome click (default: 24 = quarter note)
             8   // 32nd notes per 24 MIDI clocks (default: 8)
         };
+        MetaMessage msg;
         try {
-            return new MetaMessage(0x58, data, 4);
+            msg = new MetaMessage(0x58, data, 4);
         } catch (javax.sound.midi.InvalidMidiDataException e) {
             throw new IllegalStateException(e);
+        }
+        return new TimeSignatureInfo(human, numerator, denominator, msg);
+    }
+
+    private static class TimeSignatureInfo {
+        final String humanReadable;
+        final int numerator;
+        final int denominator;
+        final MetaMessage metaMessage;
+        TimeSignatureInfo(String humanReadable, int numerator, int denominator, MetaMessage metaMessage) {
+            this.humanReadable = humanReadable;
+            this.numerator = numerator;
+            this.denominator = denominator;
+            this.metaMessage = metaMessage;
         }
     }
 
