@@ -33,8 +33,12 @@ public final class KseqToMidi {
         Map<Integer, List<javax.sound.midi.MidiEvent>> midi = new HashMap<>();
         Map<Integer, Integer> midiChannel = new HashMap<>();
         readTrackHeaderInfo(data, midi, midiChannel);
+
+        // Read initial global tempo from header
+        int initialGlobalTempoBpm = data[getOffset(TEMPO_OFFSET)] & 0xFF;
+
         DebugSink sink = debugFlag ? System.out::println : DebugSink.NOOP;
-        TrackParser parser = new TrackParser(data, midi, midiChannel, sink, fileTypeInfo.offsetShift);
+        TrackParser parser = new TrackParser(data, midi, midiChannel, sink, fileTypeInfo.offsetShift, initialGlobalTempoBpm);
         parser.parseLinearTracks();
 
         int patternMarker = findFirstPatternMarker(data);
