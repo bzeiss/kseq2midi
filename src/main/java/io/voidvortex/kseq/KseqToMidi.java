@@ -38,6 +38,23 @@ public final class KseqToMidi {
         int initialGlobalTempoBpm = data[getOffset(TEMPO_OFFSET)] & 0xFF;
 
         DebugSink sink = debugFlag ? System.out::println : DebugSink.NOOP;
+
+        // --- Read time signature table and output changes ---
+        int tableOffset = getOffset(KseqConstants.TIME_SIG_TABLE_OFFSET);
+        if (data.length >= tableOffset + KseqConstants.TIME_SIG_TABLE_LENGTH) {
+            byte[] timeSigTable = Arrays.copyOfRange(data, tableOffset, tableOffset + KseqConstants.TIME_SIG_TABLE_LENGTH);
+            int lastSig = -1;
+            for (int bar = 0; bar < timeSigTable.length; ++bar) {
+                int sig = timeSigTable[bar] & 0xFF;
+                if (bar == 0 || sig != lastSig) {
+                    sink.log(String.format("[DEBUG] Time signature change at bar %d: %s (0x%02X)", bar + 1, decodeTimeSignature(sig), sig));
+                }
+                lastSig = sig;
+            }
+        } else {
+            sink.log("[DEBUG] Time signature table not present or file too short.");
+        }
+
         TrackParser parser = new TrackParser(data, midi, midiChannel, sink, fileTypeInfo.offsetShift, initialGlobalTempoBpm);
         parser.parseLinearTracks();
 
@@ -51,6 +68,18 @@ public final class KseqToMidi {
         }
 
         Sequence seq = new Sequence(Sequence.PPQ, MIDI_PPQN);
+
+        // Set initial time signature at bar 0 as a MIDI meta event at tick 0
+        int tsTableOffset = getOffset(KseqConstants.TIME_SIG_TABLE_OFFSET);
+        int tsByte = 0x1c; // default 4/4 if not found
+        if (data.length > tsTableOffset) {
+            tsByte = data[tsTableOffset] & 0xFF;
+        }
+        javax.sound.midi.MetaMessage timeSigMsg = createTimeSignatureMeta(tsByte);
+        seq.createTrack().add(new javax.sound.midi.MidiEvent(timeSigMsg, 0));
+        sink.log(String.format("[DEBUG] Wrote MIDI time signature meta event at tick 0: %s (0x%02X) raw=%s",
+            decodeTimeSignature(tsByte), tsByte, Arrays.toString(timeSigMsg.getData())));
+
         buildTempoTrack(seq, data);
         buildSongTracks(seq, midi);
 
@@ -60,7 +89,126 @@ public final class KseqToMidi {
             System.out.println("Written " + out);
     }
 
+    /**
+     * Decodes a KSEQ time signature byte to a human-readable string like "4/4", "3/8", etc.
+     */
+    private static String decodeTimeSignature(int sig) {
+        // Denominator mapping: lower nibble indicates denominator
+        // 0x0x = /4, 0xAx = /8, 0xEx = /2, 0x9x = /16 (see kseq.bt)
+        // But in kseq.bt, the encoding is explicit per value, so safest is a lookup
+        switch (sig) {
+            case 0x04: return "1/4";
+            case 0x0c: return "2/4";
+            case 0x14: return "3/4";
+            case 0x1c: return "4/4";
+            case 0x24: return "5/4";
+            case 0x2c: return "6/4";
+            case 0x34: return "7/4";
+            case 0x3c: return "8/4";
+            case 0x44: return "9/4";
+            case 0x4c: return "10/4";
+            case 0x54: return "11/4";
+            case 0x5c: return "12/4";
+            case 0x02: return "1/8";
+            case 0x0a: return "2/8";
+            case 0x12: return "3/8";
+            case 0x1a: return "4/8";
+            case 0x22: return "5/8";
+            case 0x2a: return "6/8";
+            case 0x32: return "7/8";
+            case 0x3a: return "8/8";
+            case 0x42: return "9/8";
+            case 0x4a: return "10/8";
+            case 0x52: return "11/8";
+            case 0x5a: return "12/8";
+            case 0x06: return "1/2";
+            case 0x0e: return "2/2";
+            case 0x16: return "3/2";
+            case 0x1e: return "4/2";
+            case 0x01: return "1/16";
+            case 0x09: return "2/16";
+            case 0x11: return "3/16";
+            case 0x19: return "4/16";
+            case 0x21: return "5/16";
+            case 0x29: return "6/16";
+            case 0x31: return "7/16";
+            case 0x41: return "9/16";
+            case 0x59: return "12/16";
+            case 0x71: return "15/16";
+            case 0xa1: return "21/16";
+            default: return String.format("unknown(0x%02X)", sig);
+        }
+    }
+
     // ─────────────────────── SMF helpers ─────────────────────────────────---
+
+    /**
+     * Creates a MIDI time signature MetaMessage from a KSEQ time signature byte.
+     * Supports only standard signatures (e.g., 4/4, 3/4, etc.).
+     */
+    private static MetaMessage createTimeSignatureMeta(int sig) {
+        int numerator, denominator;
+        switch (sig) {
+            case 0x04: numerator = 1; denominator = 4; break;
+            case 0x0c: numerator = 2; denominator = 4; break;
+            case 0x14: numerator = 3; denominator = 4; break;
+            case 0x1c: numerator = 4; denominator = 4; break;
+            case 0x24: numerator = 5; denominator = 4; break;
+            case 0x2c: numerator = 6; denominator = 4; break;
+            case 0x34: numerator = 7; denominator = 4; break;
+            case 0x3c: numerator = 8; denominator = 4; break;
+            case 0x44: numerator = 9; denominator = 4; break;
+            case 0x4c: numerator = 10; denominator = 4; break;
+            case 0x54: numerator = 11; denominator = 4; break;
+            case 0x5c: numerator = 12; denominator = 4; break;
+            case 0x02: numerator = 1; denominator = 8; break;
+            case 0x0a: numerator = 2; denominator = 8; break;
+            case 0x12: numerator = 3; denominator = 8; break;
+            case 0x1a: numerator = 4; denominator = 8; break;
+            case 0x22: numerator = 5; denominator = 8; break;
+            case 0x2a: numerator = 6; denominator = 8; break;
+            case 0x32: numerator = 7; denominator = 8; break;
+            case 0x3a: numerator = 8; denominator = 8; break;
+            case 0x42: numerator = 9; denominator = 8; break;
+            case 0x4a: numerator = 10; denominator = 8; break;
+            case 0x52: numerator = 11; denominator = 8; break;
+            case 0x5a: numerator = 12; denominator = 8; break;
+            case 0x06: numerator = 1; denominator = 2; break;
+            case 0x0e: numerator = 2; denominator = 2; break;
+            case 0x16: numerator = 3; denominator = 2; break;
+            case 0x1e: numerator = 4; denominator = 2; break;
+            case 0x01: numerator = 1; denominator = 16; break;
+            case 0x09: numerator = 2; denominator = 16; break;
+            case 0x11: numerator = 3; denominator = 16; break;
+            case 0x19: numerator = 4; denominator = 16; break;
+            case 0x21: numerator = 5; denominator = 16; break;
+            case 0x29: numerator = 6; denominator = 16; break;
+            case 0x31: numerator = 7; denominator = 16; break;
+            case 0x41: numerator = 9; denominator = 16; break;
+            case 0x59: numerator = 12; denominator = 16; break;
+            case 0x71: numerator = 15; denominator = 16; break;
+            case 0xa1: numerator = 21; denominator = 16; break;
+            default: numerator = 4; denominator = 4; break; // fallback to 4/4
+        }
+        int midiDenom = 0;
+        int d = denominator;
+        while (d > 1) {
+            d >>= 1;
+            midiDenom++;
+        }
+        byte[] data = new byte[] {
+            (byte)numerator,
+            (byte)midiDenom,
+            24, // MIDI Clocks per metronome click (default: 24 = quarter note)
+            8   // 32nd notes per 24 MIDI clocks (default: 8)
+        };
+        try {
+            return new MetaMessage(0x58, data, 4);
+        } catch (javax.sound.midi.InvalidMidiDataException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
 
     private static void buildTempoTrack(Sequence seq, byte[] data) {
         Track t = seq.createTrack();

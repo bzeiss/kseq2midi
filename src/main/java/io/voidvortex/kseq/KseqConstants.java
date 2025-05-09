@@ -72,4 +72,8 @@ public final class KseqConstants {
     // ──────────────────────────── MIDI ─────────────────────────────────
     public static final int VIRTUAL_PATTERN_TRACK = 16;   // where we dump unfolded patterns
     public static final int MIDI_PPQN = 96;
+
+    // Time signature table (bar signatures)
+    public static final int TIME_SIG_TABLE_OFFSET = 0x43C;
+    public static final int TIME_SIG_TABLE_LENGTH = 999;
 }
